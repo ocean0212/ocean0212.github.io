@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codenames Duet Key Card Generator</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@0.8.0/css/bulma.min.css"
+    />
+    <style>
+      .input {
+        min-width: 150px;
+        width: 30%;
+      }
+
+      .cell-container {
+        display: grid;
+        grid-gap: 10px;
+        grid-template-columns: repeat(5, 60px);
+        grid-template-rows: repeat(5, 40px);
+      }
+
+      .cell {
+        border-style: solid;
+        border-width: thin;
+        border-radius: 5px;
+        padding: 20px;
+      }
+
+      .green {
+        background-color: hsl(141, 53%, 53%);
+        border-color: darkgreen;
+      }
+
+      .white {
+        background-color: whitesmoke;
+        border-color: black;
+      }
+
+      .black {
+        background-color: black;
+        border-color: grey;
+      }
+    </style>
+  </head>
+
+  <body>
+    <section class="section">
+      <div class="container">
+        <h1 class="title">Codenames Duet Key Card Generator</h1>
+
+        <div class="field">
+          <label class="label">ID</label>
+          <div class="control">
+            <input class="input" type="number" data-bind="value: id" />
+            <button
+              class="button is-dark"
+              data-bind="click:randomIdButtonClicked"
+            >
+              Random ID 🎲
+            </button>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="buttons are-large">
+            <button
+              class="button"
+              data-bind="css: {'is-primary': side()==='a'}, click:sideChooseClicked.bind($data, 'a')"
+            >
+              Side A
+            </button>
+            <button
+              class="button"
+              data-bind="css: {'is-primary': side()==='b'}, click:sideChooseClicked.bind($data, 'b')"
+            >
+              Side B
+            </button>
+          </div>
+          <div class="button is-static" data-bind="visible: showHelpMessage">
+            Click above buttons to show the right side key card
+          </div>
+        </div>
+
+        <div class="content">
+          <div
+            class="cell-container side-a"
+            data-bind="foreach:frontCellsArray, visible:side() === 'a'"
+          >
+            <div class="cell" data-bind="class:$data"></div>
+          </div>
+
+          <div
+            class="cell-container side-b"
+            data-bind="foreach:reversedBackCellsArray, visible:side() === 'b'"
+          >
+            <div class="cell" data-bind="class:$data"></div>
+          </div>
+        </div>
+
+        <div class="content" data-bind="visible: !showHelpMessage()">
+          <div
+            class="button is-outlined is-info"
+            data-bind="click:qrButtonClicked"
+          >
+            QR Code for Side&nbsp;
+            <strong data-bind="text:theOtherSide().toUpperCase()"></strong>
+          </div>
+          <div class="modal" data-bind="css: {'is-active': showModal}">
+            <div
+              class="modal-background"
+              data-bind="click:modalCloseClicked"
+            ></div>
+            <canvas class="modal-content" id="qrcode-canvas"></canvas>
+            <button
+              class="modal-close is-large"
+              aria-label="close"
+              data-bind="click:modalCloseClicked"
+            ></button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>
+
+<script
+  type="text/javascript"
+  src="https://cdnjs.cloudflare.com/ajax/libs/knockout/3.5.0/knockout-min.js"
+></script>
+<script
+  type="text/javascript"
+  src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"
+></script>
+
+<script type="text/javascript">
+  const gameSettings = {
+    total: 25,
+    x: 5,
+    y: 5,
+    "g-g": 3,
+    "g-b": 1,
+    "g-w": 5,
+    "w-w": 7,
+    "w-g": 5,
+    "w-b": 1,
+    "b-b": 1,
+    "b-g": 1,
+    "b-w": 1
+  };
+
+  const colors = ["green", "white", "black"];
+
+  const cellTypes = (colors => {
+    const obj = {};
+    colors.forEach(a => {
+      colors.forEach(b => {
+        const key = `${a[0]}-${b[0]}`;
+        obj[key] = [a, b];
+      });
+    });
+    return obj;
+  })(colors);
+
+  const cellPool = ((gameSettings, cellTypes) => {
+    const arr = Array(gameSettings.total);
+    let start = 0;
+    for (const key in cellTypes) {
+      if (gameSettings.hasOwnProperty(key) && cellTypes.hasOwnProperty(key)) {
+        const target = cellTypes[key];
+        const repeat = gameSettings[key];
+        const end = start + repeat;
+        arr.fill([...target], start, end);
+        start = end;
+      }
+    }
+    return arr;
+  })(gameSettings, cellTypes);
+
+  const shuffleArray = (array, seedRandom) => {
+    const clone = [...array];
+    for (let i = clone.length - 1; i > 0; i--) {
+      const j = Math.floor(seedRandom() * (i + 1));
+      [clone[i], clone[j]] = [clone[j], clone[i]];
+    }
+    return clone;
+  };
+
+  //https://stackoverflow.com/a/19303725
+  const seedRandomGenerator = seed => {
+    return function() {
+      var x = Math.sin(seed++) * 10000;
+      return x - Math.floor(x);
+    };
+  };
+
+  const getRandomId = () => {
+    return Math.floor(Math.random() * Math.floor(10000));
+  };
+
+  //https://blog.bitscry.com/2018/08/17/getting-and-setting-url-parameters-with-javascript/
+  function getUrlParameter(url, parameter) {
+    parameter = parameter.replace(/[\[]/, "\\[").replace(/[\]]/, "\\]");
+    const regex = new RegExp("[\\?|&]" + parameter.toLowerCase() + "=([^&#]*)");
+    const results = regex.exec("?" + url.toLowerCase().split("?")[1]);
+    return results === null
+      ? ""
+      : decodeURIComponent(results[1].replace(/\+/g, " "));
+  }
+
+  function AppViewModel() {
+    var self = this;
+
+    // data
+    self.originalUrl = new URL(location);
+    self.pathUrl = `${location.origin}${location.pathname}`;
+    self.side = ko.observable(getUrlParameter(self.originalUrl.href, "side"));
+    self.id = ko.observable(
+      getUrlParameter(self.originalUrl.href, "id") || getRandomId()
+    );
+    self.qrCanvas = document.getElementById("qrcode-canvas");
+
+    // flag
+    self.showModal = ko.observable(false);
+
+    // computed
+    self.showHelpMessage = ko.computed(() => {
+      return self.side() !== "a" && self.side() !== "b";
+    });
+    self.cellsArray = ko.computed(() => {
+      return shuffleArray(cellPool, seedRandomGenerator(self.id()));
+    });
+    self.frontCellsArray = ko.computed(() => {
+      return self.cellsArray().map(it => it[0]);
+    });
+    self.backCellsArray = ko.computed(() => {
+      return self.cellsArray().map(it => it[1]);
+    });
+    self.reversedBackCellsArray = ko.computed(() => {
+      return [...self.backCellsArray()].reverse();
+    });
+    self.currentUrlWithoutSide = ko.computed(() => {
+      return `${self.pathUrl}?${self.id() ? `id=${self.id()}` : ""}`;
+    });
+    self.currentUrl = ko.computed(() => {
+      return self.side()
+        ? `${self.currentUrlWithoutSide()}&side=${self.side()}`
+        : self.currentUrlWithoutSide();
+    });
+    self.theOtherSide = ko.computed(() => {
+      return self.side() === "a" ? "b" : self.side() === "b" ? "a" : "";
+    });
+    self.urlForTheOtherSide = ko.computed(() => {
+      return `${self.currentUrlWithoutSide()}&side=${self.theOtherSide()}`;
+    });
+
+    // method
+    self.randomIdButtonClicked = () => {
+      self.id(getRandomId());
+    };
+    self.sideChooseClicked = aOrB => {
+      if (self.showHelpMessage()) {
+        self.side(aOrB);
+      } else {
+        self.side("");
+      }
+    };
+    self.qrButtonClicked = () => {
+      QRCode.toCanvas(
+        self.qrCanvas,
+        self.urlForTheOtherSide(),
+        { scale: 5 },
+        function(error) {
+          if (error) console.error(error);
+        }
+      );
+      self.showModal(true);
+    };
+    self.modalCloseClicked = () => {
+      self.showModal(false);
+    };
+
+    //subscribe
+    self.currentUrl.subscribe(newUrl => {
+      window.history.replaceState(null, null, newUrl);
+    });
+  }
+
+  ko.applyBindings(new AppViewModel());
+</script>
